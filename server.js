@@ -48,4 +48,62 @@ function generatePCL(labels, copies) {
   const COLS=4, DPI=300;
   const PW=Math.round(8.27*DPI), PH=Math.round(11.69*DPI);
   const MX=20, MY=20;
-  const CW
+  const CW=Math.floor((PW-2*MX)/COLS);
+  const LH=190;
+  const RPP=Math.floor((PH-2*MY)/LH);
+  const PPP=COLS*RPP;
+  const all=[];
+  for (const l of labels) for (let c=0;c<(copies||1);c++) all.push(l);
+  let pcl='\x1bE\x1b&l26A\x1b&l0O\x1b(0U';
+  for (let i=0;i<all.length;i++) {
+    if (i>0 && i%PPP===0) pcl+='\f';
+    const pp=i%PPP;
+    const col=pp%COLS, row=Math.floor(pp/COLS);
+    pcl+=drawLabel(all[i], MX+col*CW, MY+row*LH);
+  }
+  pcl+='\f\x1bE';
+  return Buffer.from(pcl,'binary');
+}
+
+function sendToPrinter(buffer, res) {
+  const client = new net.Socket();
+  let responded = false;
+
+  client.connect(PRINTER_PORT, PRINTER_HOST, () => {
+    console.log('Conectat, trimit', buffer.length, 'bytes...');
+    const ok = client.write(buffer);
+    if (ok) client.end();
+    else client.once('drain', () => client.end());
+  });
+  client.on('close', () => {
+    if (!responded) {
+      responded = true;
+      console.log('Trimis cu succes');
+      res.json({ success: true });
+    }
+  });
+  client.on('error', (err) => {
+    if (!responded) {
+      responded = true;
+      console.error('Eroare:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+}
+
+app.get('/', (req, res) => res.json({ status: 'Print server online' }));
+
+app.get('/test-print', (req, res) => {
+  const pcl = Buffer.from('\x1bETest Print OK\r\n\f\x1bE', 'binary');
+  sendToPrinter(pcl, res);
+});
+
+app.post('/print-labels', (req, res) => {
+  const { labels, copies } = req.body;
+  if (!labels?.length) return res.status(400).json({ error: 'No labels' });
+  console.log(`${labels.length} etichete x ${copies} copii`);
+  sendToPrinter(generatePCL(labels, copies), res);
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Print server running on port ${PORT}`));
