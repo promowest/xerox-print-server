@@ -37,7 +37,7 @@ function sendIPP(pdfBuffer, res) {
     writeAttr(0x45, 'printer-uri', printerUri),
     writeAttr(0x42, 'requesting-user-name', 'LovableApp'),
     writeAttr(0x42, 'job-name', 'PrintJob'),
-    writeAttr(0x49, 'document-format', 'application/pdf'),
+    writeAttr(0x49, 'document-format', 'application/octet-stream'),
   ]);
 
   const ippBody = Buffer.concat([hdr, Buffer.from([0x01]), attrs, Buffer.from([0x03]), pdfBuffer]);
