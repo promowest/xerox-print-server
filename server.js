@@ -19,7 +19,12 @@ function sanitize(str) {
     .replace(/[î]/g, 'i').replace(/[Î]/g, 'I');
 }
 
-function p(x, y) { return `\x1b*p${Math.round(x)}X\x1b*p${Math.round(y)}Y`; }
+function p(x, y) {
+  // Convertim din dots (300dpi) în decipoints (1/720 inch)
+  const xDp = Math.round(x * 720 / 300);
+  const yDp = Math.round(y * 720 / 300);
+  return `\x1b&a${xDp}H\x1b&a${yDp}V`;
+}
 function fs(pts) { return `\x1b(s${pts}V`; }
 const B1 = '\x1b(s3B', B0 = '\x1b(s0B';
 
