@@ -24,8 +24,15 @@ app.post('/print', upload.single('file'), (req, res) => {
 
   client.connect(PRINTER_PORT, PRINTER_HOST, () => {
     console.log('Conectat la imprimantă, trimit PDF...');
-    client.write(req.file.buffer);
-    client.end();
+    const flushed = client.write(req.file.buffer);
+    if (flushed) {
+      client.end();
+    } else {
+      client.once('drain', () => {
+        console.log('Buffer golit, închid conexiunea...');
+        client.end();
+      });
+    }
   });
 
   client.on('close', () => {
