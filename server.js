@@ -1,57 +1,60 @@
 const express = require('express');
-const multer = require('multer');
 const cors = require('cors');
 const net = require('net');
 
 const app = express();
 app.use(cors());
-const upload = multer({ storage: multer.memoryStorage() });
+app.use(express.json({ limit: '10mb' }));
 
 const PRINTER_HOST = process.env.PRINTER_HOST;
 const PRINTER_PORT = 9100;
 
-function sendToPrinter(buffer, res) {
-  const client = new net.Socket();
-  client.connect(PRINTER_PORT, PRINTER_HOST, () => {
-    console.log('Conectat la imprimantă, trimit...');
-    const flushed = client.write(buffer);
-    if (flushed) {
-      client.end();
-    } else {
-      client.once('drain', () => { client.end(); });
-    }
-  });
-  client.on('close', () => {
-    console.log('Trimis cu succes');
-    res.json({ success: true });
-  });
-  client.on('error', (err) => {
-    console.error('Eroare:', err.message);
-    res.status(500).json({ error: err.message });
-  });
+function sanitize(str) {
+  if (!str) return '';
+  return str
+    .replace(/[șş]/g, 's').replace(/[Șş]/g, 'S')
+    .replace(/[țţ]/g, 't').replace(/[Țţ]/g, 'T')
+    .replace(/[ă]/g, 'a').replace(/[Ă]/g, 'A')
+    .replace(/[â]/g, 'a').replace(/[Â]/g, 'A')
+    .replace(/[î]/g, 'i').replace(/[Î]/g, 'I');
 }
 
-app.get('/', (req, res) => res.json({ status: 'Print server online' }));
+function pos(x, y) {
+  return `\x1b*p${Math.round(x)}X\x1b*p${Math.round(y)}Y`;
+}
 
-app.get('/test-print', (req, res) => {
-  console.log('Test PCL print...');
-  const pcl = Buffer.from(
-    '\x1bE' +
-    'Test Print - Xerox B230\r\n' +
-    'Conexiunea functioneaza!\r\n' +
-    '\f' +
-    '\x1bE',
-    'binary'
-  );
-  console.log('PCL size:', pcl.length, 'bytes');
-  sendToPrinter(pcl, res);
-});
+const BOLD_ON  = '\x1b(s3B';
+const BOLD_OFF = '\x1b(s0B';
 
-app.post('/print', upload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'Niciun fisier primit' });
-  console.log('Fisier primit:', req.file.size, 'bytes');
-  sendToPrinter(req.file.buffer, res);
-});
+function fs(pts) { return `\x1b(s${pts}V`; }
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Print server running on port ${PORT}`));
+function drawLabel(label, x, y) {
+  let p = '';
+  const lh = 22;
+  let yy = y;
+
+  p += pos(x+2, yy) + fs(6) + BOLD_ON + sanitize(label.companyName) + BOLD_OFF; yy += lh;
+  p += pos(x+2, yy) + fs(5.5) + 'tel: ' + sanitize(label.phone); yy += lh - 2;
+  p += pos(x+2, yy) + fs(5.5) + '- Produs distribuit gratuit -'; yy += lh;
+
+  const name = sanitize(label.productName || '');
+  const words = name.split(' ');
+  let line1 = '', line2 = '';
+  for (const w of words) {
+    if ((line1 + ' ' + w).trim().length <= 28) line1 = (line1 + ' ' + w).trim();
+    else line2 = (line2 + ' ' + w).trim();
+  }
+  p += pos(x+2, yy) + fs(6.5) + BOLD_ON + line1 + BOLD_OFF; yy += lh;
+  if (line2) { p += pos(x+2, yy) + BOLD_ON + line2 + BOLD_OFF; yy += lh; }
+
+  p += pos(x+2, yy) + fs(5) + 'Alergeni: ' + sanitize(label.allergens); yy += lh - 2;
+  p += pos(x+2, yy) + fs(5) + BOLD_ON + 'Data de productie: ' + sanitize(label.productionDate) + BOLD_OFF; yy += lh - 2;
+  p += pos(x+2, yy) + fs(5) + 'Valabilitate: ' + sanitize(label.validity); yy += lh - 2;
+  p += pos(x+2, yy) + fs(5) + `Val. nutritionale: ${sanitize(label.weight)} / ${sanitize(label.calories)} cal`;
+  return p;
+}
+
+function generatePCL(labels, copies) {
+  const COLS = 4, DPI = 300;
+  const PAGE_W = Math.round(8.27 * DPI);
+  const PAGE_H = Math.
