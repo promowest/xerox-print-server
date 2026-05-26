@@ -57,4 +57,57 @@ function drawLabel(label, x, y) {
 function generatePCL(labels, copies) {
   const COLS = 4, DPI = 300;
   const PAGE_W = Math.round(8.27 * DPI);
-  const PAGE_H = Math.
+  const PAGE_H = Math.round(11.69 * DPI);
+  const MARGIN_X = 20, MARGIN_Y = 20;
+  const COL_W = Math.floor((PAGE_W - 2 * MARGIN_X) / COLS);
+  const LABEL_H = 190;
+  const ROWS_PER_PAGE = Math.floor((PAGE_H - 2 * MARGIN_Y) / LABEL_H);
+  const PER_PAGE = COLS * ROWS_PER_PAGE;
+
+  const all = [];
+  for (const l of labels)
+    for (let c = 0; c < (copies || 1); c++) all.push(l);
+
+  let pcl = '\x1bE\x1b&l26A\x1b&l0O\x1b(0U';
+
+  for (let i = 0; i < all.length; i++) {
+    if (i > 0 && i % PER_PAGE === 0) pcl += '\f';
+    const pos_on_page = i % PER_PAGE;
+    const col = pos_on_page % COLS;
+    const row = Math.floor(pos_on_page / COLS);
+    const x = MARGIN_X + col * COL_W;
+    const y = MARGIN_Y + row * LABEL_H;
+    pcl += drawLabel(all[i], x, y);
+  }
+
+  pcl += '\f\x1bE';
+  return Buffer.from(pcl, 'binary');
+}
+
+function sendToPrinter(buffer, res) {
+  const client = new net.Socket();
+  client.connect(PRINTER_PORT, PRINTER_HOST, () => {
+    console.log('Conectat, trimit', buffer.length, 'bytes...');
+    const ok = client.write(buffer);
+    if (ok) client.end();
+    else client.once('drain', () => client.end());
+  });
+  client.on('close', () => { console.log('OK'); res.json({ success: true }); });
+  client.on('error', (err) => { console.error(err.message); res.status(500).json({ error: err.message }); });
+}
+
+app.get('/', (req, res) => res.json({ status: 'Print server online' }));
+
+app.get('/test-print', (req, res) => {
+  sendToPrinter(Buffer.from('\x1bETest Print OK\r\n\f\x1bE', 'binary'), res);
+});
+
+app.post('/print-labels', (req, res) => {
+  const { labels, copies } = req.body;
+  if (!labels?.length) return res.status(400).json({ error: 'No labels' });
+  console.log(`${labels.length} etichete x ${copies} copii`);
+  sendToPrinter(generatePCL(labels, copies), res);
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Print server running on port ${PORT}`));
