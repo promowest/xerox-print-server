@@ -15,8 +15,13 @@ app.get('/', (req, res) => res.json({ status: 'Print server online' }));
 app.post('/print', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Niciun fisier primit' });
 
+  console.log('Fisier primit:', req.file.originalname);
+  console.log('Size:', req.file.size, 'bytes');
+  console.log('Mimetype:', req.file.mimetype);
+  console.log('Primii bytes (hex):', req.file.buffer.slice(0, 8).toString('hex'));
+
   const client = new net.Socket();
-  
+
   client.connect(PRINTER_PORT, PRINTER_HOST, () => {
     console.log('Conectat la imprimantă, trimit PDF...');
     client.write(req.file.buffer);
