@@ -7,7 +7,7 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
 const PRINTER_HOST = process.env.PRINTER_HOST;
-const PRINTER_PORT = 9100;
+const PRINTER_PORT = parseInt(process.env.PRINTER_PORT) || 9100;
 
 function sanitize(str) {
   if (!str) return '';
@@ -19,95 +19,33 @@ function sanitize(str) {
     .replace(/[î]/g, 'i').replace(/[Î]/g, 'I');
 }
 
-function pos(x, y) {
-  return `\x1b*p${Math.round(x)}X\x1b*p${Math.round(y)}Y`;
-}
-
-const BOLD_ON  = '\x1b(s3B';
-const BOLD_OFF = '\x1b(s0B';
-
+function p(x, y) { return `\x1b*p${Math.round(x)}X\x1b*p${Math.round(y)}Y`; }
 function fs(pts) { return `\x1b(s${pts}V`; }
+const B1 = '\x1b(s3B', B0 = '\x1b(s0B';
 
 function drawLabel(label, x, y) {
-  let p = '';
-  const lh = 22;
-  let yy = y;
-
-  p += pos(x+2, yy) + fs(6) + BOLD_ON + sanitize(label.companyName) + BOLD_OFF; yy += lh;
-  p += pos(x+2, yy) + fs(5.5) + 'tel: ' + sanitize(label.phone); yy += lh - 2;
-  p += pos(x+2, yy) + fs(5.5) + '- Produs distribuit gratuit -'; yy += lh;
-
-  const name = sanitize(label.productName || '');
+  let t = '', yy = y, lh = 22;
+  t += p(x+2,yy)+fs(6)+B1+sanitize(label.companyName)+B0; yy+=lh;
+  t += p(x+2,yy)+fs(5.5)+'tel: '+sanitize(label.phone); yy+=lh-2;
+  t += p(x+2,yy)+fs(5.5)+'- Produs distribuit gratuit -'; yy+=lh;
+  const name = sanitize(label.productName||'');
   const words = name.split(' ');
-  let line1 = '', line2 = '';
+  let l1='', l2='';
   for (const w of words) {
-    if ((line1 + ' ' + w).trim().length <= 28) line1 = (line1 + ' ' + w).trim();
-    else line2 = (line2 + ' ' + w).trim();
+    if ((l1+' '+w).trim().length<=28) l1=(l1+' '+w).trim();
+    else l2=(l2+' '+w).trim();
   }
-  p += pos(x+2, yy) + fs(6.5) + BOLD_ON + line1 + BOLD_OFF; yy += lh;
-  if (line2) { p += pos(x+2, yy) + BOLD_ON + line2 + BOLD_OFF; yy += lh; }
-
-  p += pos(x+2, yy) + fs(5) + 'Alergeni: ' + sanitize(label.allergens); yy += lh - 2;
-  p += pos(x+2, yy) + fs(5) + BOLD_ON + 'Data de productie: ' + sanitize(label.productionDate) + BOLD_OFF; yy += lh - 2;
-  p += pos(x+2, yy) + fs(5) + 'Valabilitate: ' + sanitize(label.validity); yy += lh - 2;
-  p += pos(x+2, yy) + fs(5) + `Val. nutritionale: ${sanitize(label.weight)} / ${sanitize(label.calories)} cal`;
-  return p;
+  t += p(x+2,yy)+fs(6.5)+B1+l1+B0; yy+=lh;
+  if (l2) { t += p(x+2,yy)+B1+l2+B0; yy+=lh; }
+  t += p(x+2,yy)+fs(5)+'Alergeni: '+sanitize(label.allergens); yy+=lh-2;
+  t += p(x+2,yy)+fs(5)+B1+'Data de productie: '+sanitize(label.productionDate)+B0; yy+=lh-2;
+  t += p(x+2,yy)+fs(5)+'Valabilitate: '+sanitize(label.validity); yy+=lh-2;
+  t += p(x+2,yy)+fs(5)+`Val. nutritionale: ${sanitize(label.weight)} / ${sanitize(label.calories)} cal`;
+  return t;
 }
 
 function generatePCL(labels, copies) {
-  const COLS = 4, DPI = 300;
-  const PAGE_W = Math.round(8.27 * DPI);
-  const PAGE_H = Math.round(11.69 * DPI);
-  const MARGIN_X = 20, MARGIN_Y = 20;
-  const COL_W = Math.floor((PAGE_W - 2 * MARGIN_X) / COLS);
-  const LABEL_H = 190;
-  const ROWS_PER_PAGE = Math.floor((PAGE_H - 2 * MARGIN_Y) / LABEL_H);
-  const PER_PAGE = COLS * ROWS_PER_PAGE;
-
-  const all = [];
-  for (const l of labels)
-    for (let c = 0; c < (copies || 1); c++) all.push(l);
-
-  let pcl = '\x1bE\x1b&l26A\x1b&l0O\x1b(0U';
-
-  for (let i = 0; i < all.length; i++) {
-    if (i > 0 && i % PER_PAGE === 0) pcl += '\f';
-    const pos_on_page = i % PER_PAGE;
-    const col = pos_on_page % COLS;
-    const row = Math.floor(pos_on_page / COLS);
-    const x = MARGIN_X + col * COL_W;
-    const y = MARGIN_Y + row * LABEL_H;
-    pcl += drawLabel(all[i], x, y);
-  }
-
-  pcl += '\f\x1bE';
-  return Buffer.from(pcl, 'binary');
-}
-
-function sendToPrinter(buffer, res) {
-  const client = new net.Socket();
-  client.connect(PRINTER_PORT, PRINTER_HOST, () => {
-    console.log('Conectat, trimit', buffer.length, 'bytes...');
-    const ok = client.write(buffer);
-    if (ok) client.end();
-    else client.once('drain', () => client.end());
-  });
-  client.on('close', () => { console.log('OK'); res.json({ success: true }); });
-  client.on('error', (err) => { console.error(err.message); res.status(500).json({ error: err.message }); });
-}
-
-app.get('/', (req, res) => res.json({ status: 'Print server online' }));
-
-app.get('/test-print', (req, res) => {
-  sendToPrinter(Buffer.from('\x1bETest Print OK\r\n\f\x1bE', 'binary'), res);
-});
-
-app.post('/print-labels', (req, res) => {
-  const { labels, copies } = req.body;
-  if (!labels?.length) return res.status(400).json({ error: 'No labels' });
-  console.log(`${labels.length} etichete x ${copies} copii`);
-  sendToPrinter(generatePCL(labels, copies), res);
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Print server running on port ${PORT}`));
+  const COLS=4, DPI=300;
+  const PW=Math.round(8.27*DPI), PH=Math.round(11.69*DPI);
+  const MX=20, MY=20;
+  const CW
