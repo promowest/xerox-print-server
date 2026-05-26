@@ -62,13 +62,15 @@ app.post('/print', upload.single('file'), (req, res) => {
   };
 
   const request = http.request(options, (response) => {
-    const chunks = [];
-    response.on('data', c => chunks.push(c));
-    response.on('end', () => {
-      console.log('IPP status:', response.statusCode);
-      res.json({ success: true, statusCode: response.statusCode });
-    });
+  const chunks = [];
+  response.on('data', c => chunks.push(c));
+  response.on('end', () => {
+    const body = Buffer.concat(chunks);
+    console.log('IPP status:', response.statusCode);
+    console.log('IPP response body (hex):', body.slice(0, 20).toString('hex'));
+    res.json({ success: true, statusCode: response.statusCode });
   });
+});
 
   request.on('error', (err) => {
     console.error('IPP error:', err);
