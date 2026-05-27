@@ -27,7 +27,8 @@ function sendIPP(pdfBuffer, res) {
   };
 
   const hdr = Buffer.alloc(8);
-  hdr.writeUInt8(1, 0); hdr.writeUInt8(1, 1);
+  hdr.writeUInt8(2, 0); // IPP/2.0
+  hdr.writeUInt8(0, 1);
   hdr.writeUInt16BE(0x0002, 2);
   hdr.writeInt32BE(1, 4);
 
@@ -37,15 +38,17 @@ function sendIPP(pdfBuffer, res) {
     writeAttr(0x45, 'printer-uri', printerUri),
     writeAttr(0x42, 'requesting-user-name', 'LovableApp'),
     writeAttr(0x42, 'job-name', 'PrintJob'),
-    writeAttr(0x49, 'document-format', 'application/octet-stream'),
+    writeAttr(0x49, 'document-format', 'application/pdf'),
   ]);
 
   const ippBody = Buffer.concat([hdr, Buffer.from([0x01]), attrs, Buffer.from([0x03]), pdfBuffer]);
 
   const http = require('http');
-  const parsed = { hostname: PRINTER_HOST, port: 631, path: '/ipp/print', method: 'POST' };
   const options = {
-    ...parsed,
+    hostname: PRINTER_HOST,
+    port: 631,
+    path: '/ipp/print',
+    method: 'POST',
     headers: {
       'Content-Type': 'application/ipp',
       'Content-Length': ippBody.length,
