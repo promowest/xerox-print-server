@@ -37,7 +37,10 @@ function sendIPP(buffer, mimeType, res) {
     writeAttr(0x42, 'requesting-user-name', 'LovableApp'),
     writeAttr(0x42, 'job-name', 'PrintJob'),
     writeAttr(0x49, 'document-format', mimeType),
+    writeAttr(0x44, 'print-scaling', 'fit'),
+    writeAttr(0x44, 'media', 'iso_a4_210x297mm'),
   ]);
+
 
   const ippBody = Buffer.concat([hdr, Buffer.from([0x01]), attrs, Buffer.from([0x03]), buffer]);
 
