@@ -41,7 +41,6 @@ function sendIPP(buffer, mimeType, res) {
     writeAttr(0x44, 'media', 'iso_a4_210x297mm'),
   ]);
 
-
   const ippBody = Buffer.concat([hdr, Buffer.from([0x01]), attrs, Buffer.from([0x03]), buffer]);
 
   const http = require('http');
