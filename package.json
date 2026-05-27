@@ -5,6 +5,6 @@
   "dependencies": {
     "express": "*",
     "cors": "*",
-    "pdfkit": "*"
+    "multer": "*"
   }
 }
