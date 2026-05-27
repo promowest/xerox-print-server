@@ -45,15 +45,13 @@ function sendIPP(buffer, mimeType, res) {
  hdr.writeInt32BE(1, 4);
 
  const attrs = Buffer.concat([
-   writeAttr(0x47, 'attributes-charset', 'utf-8'),
-   writeAttr(0x48, 'attributes-natural-language', 'en'),
-   writeAttr(0x45, 'printer-uri', printerUri),
-   writeAttr(0x42, 'requesting-user-name', 'LovableApp'),
-   writeAttr(0x42, 'job-name', 'PrintJob'),
-   writeAttr(0x49, 'document-format', mimeType),
-   writeAttr(0x44, 'print-scaling', 'none'),
-   writeAttr(0x44, 'media', 'iso_a4_210x297mm'),
- ]);
+    writeAttr(0x47, 'attributes-charset', 'utf-8'),
+    writeAttr(0x48, 'attributes-natural-language', 'en'),
+    writeAttr(0x45, 'printer-uri', printerUri),
+    writeAttr(0x42, 'requesting-user-name', 'LovableApp'),
+    writeAttr(0x42, 'job-name', 'PrintJob'),
+    writeAttr(0x49, 'document-format', mimeType),
+]);
 
  const ippBody = Buffer.concat([hdr, Buffer.from([0x01]), attrs, Buffer.from([0x03]), buffer]);
 
