@@ -23,7 +23,19 @@ function setJPEGDPI(buffer, dpi) {
   return buffer;
 }
 
-function sendIPP(buffer, mimeType, res) {
+function writeIntAttr(name, value) {
+  const n = Buffer.from(name, 'utf8');
+  const b = Buffer.allocUnsafe(1 + 2 + n.length + 2 + 4);
+  let o = 0;
+  b.writeUInt8(0x21, o++);
+  b.writeUInt16BE(n.length, o); o += 2;
+  n.copy(b, o); o += n.length;
+  b.writeUInt16BE(4, o); o += 2;
+  b.writeInt32BE(value, o);
+  return b;
+}
+
+function sendIPP(buffer, mimeType, copies) {
   const printerUri = `ipp://${PRINTER_HOST}:${PRINTER_PORT}/ipp/print`;
 
   const writeAttr = (tag, name, value) => {
@@ -52,6 +64,7 @@ function sendIPP(buffer, mimeType, res) {
     writeAttr(0x42, 'requesting-user-name', 'LovableApp'),
     writeAttr(0x42, 'job-name', 'PrintJob'),
     writeAttr(0x49, 'document-format', mimeType),
+    writeIntAttr('copies', copies || 1),
   ]);
 
   const ippBody = Buffer.concat([hdr, Buffer.from([0x01]), attrs, Buffer.from([0x03]), buffer]);
@@ -68,28 +81,18 @@ function sendIPP(buffer, mimeType, res) {
     }
   };
 
-  let responded = false;
   const request = http.request(options, (response) => {
     const chunks = [];
     response.on('data', c => chunks.push(c));
     response.on('end', () => {
       const body = Buffer.concat(chunks);
       const ippStatus = body.readUInt16BE(2);
-      console.log('IPP status:', '0x' + ippStatus.toString(16));
-      if (!responded) {
-        responded = true;
-        if (ippStatus === 0x0000) {
-          res.json({ success: true });
-        } else {
-          res.status(500).json({ error: 'IPP error: 0x' + ippStatus.toString(16) });
-        }
-      }
+      console.log('IPP status:', '0x' + ippStatus.toString(16), '| Copii:', copies);
     });
   });
 
   request.on('error', (err) => {
     console.error('IPP error:', err.message);
-    if (!responded) { responded = true; res.status(500).json({ error: err.message }); }
   });
 
   request.write(ippBody);
@@ -101,11 +104,17 @@ app.get('/', (req, res) => res.json({ status: 'Print server online', printer_hos
 app.post('/print', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Niciun fisier primit' });
   const mimeType = req.file.mimetype || 'image/jpeg';
-  console.log('Fisier primit:', req.file.size, 'bytes, tip:', mimeType);
+  const copies = parseInt(req.body.copies) || 1;
+  console.log('Fisier primit:', req.file.size, 'bytes | Copii:', copies);
+
+  // Răspunde imediat — browserul poate fi închis
+  res.json({ success: true, queued: true, copies });
+
+  // Tipărește în background
   const buffer = mimeType === 'image/jpeg'
     ? setJPEGDPI(req.file.buffer, 300)
     : req.file.buffer;
-  sendIPP(buffer, mimeType, res);
+  sendIPP(buffer, mimeType, copies);
 });
 
 const PORT = process.env.PORT || 3000;
