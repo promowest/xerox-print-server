@@ -96,7 +96,7 @@ function sendIPP(buffer, mimeType, res) {
   request.end();
 }
 
-app.get('/', (req, res) => res.json({ status: 'Print server online' }));
+app.get('/', (req, res) => res.json({ status: 'Print server online', printer_host: PRINTER_HOST, printer_port: PRINTER_PORT }));
 
 app.post('/print', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Niciun fisier primit' });
