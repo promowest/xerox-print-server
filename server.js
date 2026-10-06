@@ -111,8 +111,14 @@ function sendRaw(buffer, copies, callback) {
     client.connect(PRINT_RAW_PORT, PRINTER_HOST, () => {
       console.log(`Trimit copia ${sent + 1}/${copies}...`);
       const ok = client.write(buffer);
-      if (ok) client.end();
-      else client.once('drain', () => client.end());
+      if (ok) {
+        // Așteptăm 3 secunde după trimitere apoi închidem
+        setTimeout(() => client.end(), 3000);
+      } else {
+        client.once('drain', () => {
+          setTimeout(() => client.end(), 3000);
+        });
+      }
     });
 
     client.on('close', () => {
