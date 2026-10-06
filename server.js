@@ -13,7 +13,6 @@ const PRINTER_PORT = parseInt(process.env.PRINTER_PORT) || 631;
 const PRINT_RAW_PORT = 9100;
 const API_KEY = process.env.API_KEY;
 
-// ─── Middleware autentificare ─────────────────────────────
 function requireAuth(req, res, next) {
   const key = req.headers['x-api-key'] || req.query.key;
   if (API_KEY && key !== API_KEY) {
@@ -112,7 +111,6 @@ function sendRaw(buffer, copies, callback) {
       console.log(`Trimit copia ${sent + 1}/${copies}...`);
       const ok = client.write(buffer);
       if (ok) {
-        // Așteptăm 3 secunde după trimitere apoi închidem
         setTimeout(() => client.end(), 3000);
       } else {
         client.once('drain', () => {
@@ -139,8 +137,6 @@ function sendRaw(buffer, copies, callback) {
 
   sendOne();
 }
-
-// ─── Endpoints ───────────────────────────────────────────
 
 app.get('/', (req, res) => res.json({
   status: 'Print server online',
@@ -198,18 +194,21 @@ app.post('/print', requireAuth, upload.single('file'), (req, res) => {
   const copies = parseInt(req.body.copies) || 1;
   console.log('Fisier primit:', req.file.size, 'bytes | Copii:', copies);
 
+  // Răspundem imediat — nu mai așteptăm imprimanta
+  res.json({
+    success: true,
+    confirmed: true,
+    copies,
+    message: `Job trimis la imprimantă — ${copies} ${copies === 1 ? 'copie' : 'copii'}`
+  });
+
+  // Trimitem în background
   sendRaw(req.file.buffer, copies, (err) => {
     if (err) {
       console.error('Raw print error:', err.message);
-      return res.status(500).json({ success: false, error: err.message });
+    } else {
+      console.log('Trimis cu succes:', copies, 'copii');
     }
-    console.log('Trimis cu succes:', copies, 'copii');
-    res.json({
-      success: true,
-      confirmed: true,
-      copies,
-      message: `Job acceptat de imprimantă — ${copies} ${copies === 1 ? 'copie' : 'copii'}`
-    });
   });
 });
 
