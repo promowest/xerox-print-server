@@ -110,7 +110,7 @@ function parseIPPResponse(body) {
   return result;
 }
 
-function sendIPP(buffer, mimeType, copies) {
+function sendIPP(buffer, mimeType, copies, callback) {
   const printerUri = `ipp://${PRINTER_HOST}:${PRINTER_PORT}/ipp/print`;
 
   const attrs = [
@@ -148,14 +148,22 @@ function sendIPP(buffer, mimeType, copies) {
     response.on('end', () => {
       const body = Buffer.concat(chunks);
       const ippStatus = body.readUInt16BE(2);
-      console.log('IPP status:', '0x' + ippStatus.toString(16), '| Copii:', copies);
+      const ippStatusHex = '0x' + ippStatus.toString(16);
+      console.log('IPP status:', ippStatusHex, '| Copii:', copies);
+      callback(null, ippStatus, ippStatusHex);
     });
   });
 
-  request.on('error', (err) => console.error('IPP error:', err.message));
+  request.on('error', (err) => {
+    console.error('IPP error:', err.message);
+    callback(err);
+  });
+
   request.write(ippBody);
   request.end();
 }
+
+// ─── Endpoints ───────────────────────────────────────────
 
 app.get('/', (req, res) => res.json({
   status: 'Print server online',
@@ -192,8 +200,6 @@ app.get('/printer-status', (req, res) => {
     if (err) return res.status(500).json({ error: err.message, online: false });
 
     const parsed = parseIPPResponse(body);
-    console.log('Printer attrs:', JSON.stringify(parsed));
-
     const stateMap = { 3: 'idle', 4: 'printing', 5: 'stopped' };
 
     res.json({
@@ -211,16 +217,41 @@ app.get('/printer-status', (req, res) => {
 
 app.post('/print', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Niciun fisier primit' });
+
   const mimeType = req.file.mimetype || 'image/jpeg';
   const copies = parseInt(req.body.copies) || 1;
   console.log('Fisier primit:', req.file.size, 'bytes | Copii:', copies);
 
-  res.json({ success: true, queued: true, copies });
-
   const buffer = mimeType === 'image/jpeg'
     ? setJPEGDPI(req.file.buffer, 300)
     : req.file.buffer;
-  sendIPP(buffer, mimeType, copies);
+
+  // Opțiunea B — așteptăm confirmarea IPP înainte să răspundem
+  sendIPP(buffer, mimeType, copies, (err, ippStatus, ippStatusHex) => {
+    if (err) {
+      return res.status(500).json({
+        success: false,
+        error: err.message
+      });
+    }
+
+    if (ippStatus === 0x0000) {
+      res.json({
+        success: true,
+        confirmed: true,
+        copies,
+        ippStatus: ippStatusHex,
+        message: `Job acceptat de imprimantă — ${copies} ${copies === 1 ? 'copie' : 'copii'}`
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        confirmed: false,
+        ippStatus: ippStatusHex,
+        error: `Imprimanta a returnat eroare IPP: ${ippStatusHex}`
+      });
+    }
+  });
 });
 
 const PORT = process.env.PORT || 3000;
