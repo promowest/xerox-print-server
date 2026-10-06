@@ -86,12 +86,12 @@ function ippRequest(operationId, attributes, callback) {
 
 function parseIPPResponse(body) {
   const result = {};
-  let offset = 8; // skip header
+  let offset = 8;
 
   while (offset < body.length) {
     const tag = body[offset];
-    if (tag === 0x03) break; // end of attributes
-    if (tag <= 0x0F) { offset++; continue; } // group tags
+    if (tag === 0x03) break;
+    if (tag <= 0x0F) { offset++; continue; }
 
     offset++;
     const nameLen = body.readUInt16BE(offset); offset += 2;
@@ -100,7 +100,7 @@ function parseIPPResponse(body) {
     const value = body.slice(offset, offset + valueLen); offset += valueLen;
 
     if (name) {
-      if (tag === 0x21 || tag === 0x23) { // integer or enum
+      if (tag === 0x21 || tag === 0x23) {
         result[name] = value.readInt32BE(0);
       } else {
         result[name] = value.toString('utf8');
@@ -157,13 +157,26 @@ function sendIPP(buffer, mimeType, copies) {
   request.end();
 }
 
-// ─── Endpoints ───────────────────────────────────────────
-
 app.get('/', (req, res) => res.json({
   status: 'Print server online',
   printer_host: PRINTER_HOST,
   printer_port: PRINTER_PORT
 }));
+
+app.get('/printer-info', (req, res) => {
+  const printerUri = `ipp://${PRINTER_HOST}:${PRINTER_PORT}/ipp/print`;
+  const attrs = [
+    writeAttr(0x47, 'attributes-charset', 'utf-8'),
+    writeAttr(0x48, 'attributes-natural-language', 'en'),
+    writeAttr(0x45, 'printer-uri', printerUri),
+    writeAttr(0x44, 'requested-attributes', 'document-format-supported'),
+  ];
+  ippRequest(0x000B, attrs, (err, body) => {
+    if (err) return res.status(500).json({ error: err.message });
+    const parsed = parseIPPResponse(body);
+    res.json({ formats: parsed, hex: body.toString('hex').substring(0, 300) });
+  });
+});
 
 app.get('/printer-status', (req, res) => {
   const printerUri = `ipp://${PRINTER_HOST}:${PRINTER_PORT}/ipp/print`;
@@ -181,18 +194,14 @@ app.get('/printer-status', (req, res) => {
   ];
 
   ippRequest(0x000B, attrs, (err, body) => {
-    if (err) {
-      return res.status(500).json({ error: err.message, online: false });
-    }
+    if (err) return res.status(500).json({ error: err.message, online: false });
 
     const parsed = parseIPPResponse(body);
-
     const stateMap = { 3: 'idle', 4: 'printing', 5: 'stopped' };
-    const printerState = parsed['printer-state'];
 
     res.json({
       online: true,
-      state: stateMap[printerState] || 'unknown',
+      state: stateMap[parsed['printer-state']] || 'unknown',
       stateMessage: parsed['printer-state-message'] || '',
       tonerLevel: parsed['marker-levels'] !== undefined ? parsed['marker-levels'] : null,
       markerName: parsed['marker-names'] || 'Toner',
