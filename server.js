@@ -185,18 +185,15 @@ app.get('/printer-status', (req, res) => {
     writeAttr(0x47, 'attributes-charset', 'utf-8'),
     writeAttr(0x48, 'attributes-natural-language', 'en'),
     writeAttr(0x45, 'printer-uri', printerUri),
-    writeAttr(0x44, 'requested-attributes', 'printer-state'),
-    writeAttr(0x44, 'requested-attributes', 'printer-state-message'),
-    writeAttr(0x44, 'requested-attributes', 'marker-levels'),
-    writeAttr(0x44, 'requested-attributes', 'marker-names'),
-    writeAttr(0x44, 'requested-attributes', 'queued-job-count'),
-    writeAttr(0x44, 'requested-attributes', 'media-ready'),
+    writeAttr(0x44, 'requested-attributes', 'all'),
   ];
 
   ippRequest(0x000B, attrs, (err, body) => {
     if (err) return res.status(500).json({ error: err.message, online: false });
 
     const parsed = parseIPPResponse(body);
+    console.log('Printer attrs:', JSON.stringify(parsed));
+
     const stateMap = { 3: 'idle', 4: 'printing', 5: 'stopped' };
 
     res.json({
@@ -207,6 +204,7 @@ app.get('/printer-status', (req, res) => {
       markerName: parsed['marker-names'] || 'Toner',
       queuedJobs: parsed['queued-job-count'] || 0,
       mediaReady: parsed['media-ready'] || 'unknown',
+      raw: parsed,
     });
   });
 });
