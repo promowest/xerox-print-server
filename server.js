@@ -99,7 +99,7 @@ function sendIPP(buffer, copies, callback) {
     writeAttr(0x45, 'printer-uri', printerUri),
     writeAttr(0x42, 'requesting-user-name', 'LovableApp'),
     writeAttr(0x42, 'job-name', 'PrintJob'),
-    writeAttr(0x49, 'document-format', 'application/octet-stream'),
+    writeAttr(0x49, 'document-format', 'image/urf'),
     writeIntAttr('copies', copies || 1),
   ];
 
