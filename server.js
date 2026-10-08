@@ -96,10 +96,10 @@ function sendRaw(buffer, copies, callback) {
       console.log(`Trimit copia ${sent + 1}/${copies}...`);
       const ok = client.write(buffer);
       if (ok) {
-        setTimeout(() => client.end(), 3000);
+        setTimeout(() => client.end(), 10000);
       } else {
         client.once('drain', () => {
-          setTimeout(() => client.end(), 3000);
+          setTimeout(() => client.end(), 10000);
         });
       }
     });
