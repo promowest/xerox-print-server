@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const http = require('http');
+const net = require('net');
 
 const app = express();
 app.use(cors());
@@ -32,18 +33,6 @@ function writeAttr(tag, name, value) {
   return b;
 }
 
-function writeIntAttr(name, value) {
-  const n = Buffer.from(name, 'utf8');
-  const b = Buffer.allocUnsafe(1 + 2 + n.length + 2 + 4);
-  let o = 0;
-  b.writeUInt8(0x21, o++);
-  b.writeUInt16BE(n.length, o); o += 2;
-  n.copy(b, o); o += n.length;
-  b.writeUInt16BE(4, o); o += 2;
-  b.writeInt32BE(value, o);
-  return b;
-}
-
 function ippRequest(operationId, attributes, callback) {
   const hdr = Buffer.alloc(8);
   hdr.writeUInt8(2, 0);
@@ -55,7 +44,7 @@ function ippRequest(operationId, attributes, callback) {
 
   const options = {
     hostname: PRINTER_HOST,
-    port: PRINTER_PORT,
+    port: 16315,
     path: '/ipp/print',
     method: 'POST',
     headers: { 'Content-Type': 'application/ipp', 'Content-Length': ippBody.length }
@@ -91,55 +80,58 @@ function parseIPPResponse(body) {
   return result;
 }
 
-function sendIPP(buffer, copies, callback) {
-  const printerUri = `ipp://${PRINTER_HOST}:${PRINTER_PORT}/ipp/print`;
-  const attrs = [
-    writeAttr(0x47, 'attributes-charset', 'utf-8'),
-    writeAttr(0x48, 'attributes-natural-language', 'en'),
-    writeAttr(0x45, 'printer-uri', printerUri),
-    writeAttr(0x42, 'requesting-user-name', 'LovableApp'),
-    writeAttr(0x42, 'job-name', 'PrintJob'),
-    writeAttr(0x49, 'document-format', 'image/urf'),
-    writeIntAttr('copies', copies || 1),
-  ];
+function sendRaw(buffer, copies, callback) {
+  let sent = 0;
 
-  const hdr = Buffer.alloc(8);
-  hdr.writeUInt8(2, 0); hdr.writeUInt8(0, 1);
-  hdr.writeUInt16BE(0x0002, 2); hdr.writeInt32BE(1, 4);
+  function sendOne() {
+    if (sent >= copies) {
+      callback(null);
+      return;
+    }
 
-  const ippBody = Buffer.concat([hdr, Buffer.from([0x01]), ...attrs, Buffer.from([0x03]), buffer]);
+    const client = new net.Socket();
+    let responded = false;
 
-  const options = {
-    hostname: PRINTER_HOST,
-    port: PRINTER_PORT,
-    path: '/ipp/print',
-    method: 'POST',
-    headers: { 'Content-Type': 'application/ipp', 'Content-Length': ippBody.length }
-  };
-
-  let responded = false;
-  const request = http.request(options, (response) => {
-    const chunks = [];
-    response.on('data', c => chunks.push(c));
-    response.on('end', () => {
-      const body = Buffer.concat(chunks);
-      const ippStatus = body.readUInt16BE(2);
-      console.log('IPP status:', '0x' + ippStatus.toString(16), '| Copii:', copies);
-      if (!responded) { responded = true; callback(null, ippStatus); }
+    client.connect(PRINTER_PORT, PRINTER_HOST, () => {
+      console.log(`Trimit copia ${sent + 1}/${copies}...`);
+      const ok = client.write(buffer);
+      if (ok) {
+        setTimeout(() => client.end(), 3000);
+      } else {
+        client.once('drain', () => {
+          setTimeout(() => client.end(), 3000);
+        });
+      }
     });
-  });
-  request.on('error', (err) => {
-    console.error('IPP error:', err.message);
-    if (!responded) { responded = true; callback(err); }
-  });
-  request.write(ippBody);
-  request.end();
+
+    client.on('close', () => {
+      if (!responded) {
+        responded = true;
+        sent++;
+        console.log(`Copia ${sent}/${copies} trimisă.`);
+        sendOne();
+      }
+    });
+
+    client.on('error', (err) => {
+      if (!responded) {
+        responded = true;
+        callback(err);
+      }
+    });
+  }
+
+  sendOne();
 }
 
-app.get('/', (req, res) => res.json({ status: 'Print server online', printer_host: PRINTER_HOST, printer_port: PRINTER_PORT }));
+app.get('/', (req, res) => res.json({
+  status: 'Print server online',
+  printer_host: PRINTER_HOST,
+  printer_port: PRINTER_PORT
+}));
 
 app.get('/printer-status', requireAuth, (req, res) => {
-  const printerUri = `ipp://${PRINTER_HOST}:${PRINTER_PORT}/ipp/print`;
+  const printerUri = `ipp://${PRINTER_HOST}:16315/ipp/print`;
   const attrs = [
     writeAttr(0x47, 'attributes-charset', 'utf-8'),
     writeAttr(0x48, 'attributes-natural-language', 'en'),
@@ -166,13 +158,18 @@ app.get('/printer-status', requireAuth, (req, res) => {
 app.post('/print', requireAuth, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Niciun fisier primit' });
   const copies = parseInt(req.body.copies) || 1;
-  console.log('Fisier primit:', req.file.size, 'bytes | Copii:', copies, '| Tip:', req.file.mimetype, '| Header:', req.file.buffer.slice(0, 8).toString('hex'));
+  console.log('Fisier primit:', req.file.size, 'bytes | Copii:', copies);
 
-  res.json({ success: true, confirmed: true, copies, message: `Job trimis la imprimantă — ${copies} ${copies === 1 ? 'copie' : 'copii'}` });
+  res.json({
+    success: true,
+    confirmed: true,
+    copies,
+    message: `Job trimis la imprimantă — ${copies} ${copies === 1 ? 'copie' : 'copii'}`
+  });
 
-  sendIPP(req.file.buffer, copies, (err, ippStatus) => {
-    if (err) console.error('IPP error:', err.message);
-    else console.log('IPP finalizat, status:', '0x' + ippStatus.toString(16));
+  sendRaw(req.file.buffer, copies, (err) => {
+    if (err) console.error('Raw print error:', err.message);
+    else console.log('Trimis cu succes:', copies, 'copii');
   });
 });
 
