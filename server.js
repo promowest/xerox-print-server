@@ -109,7 +109,18 @@ function sendRaw(buffer, copies, callback) {
 
     client.connect(PRINT_RAW_PORT, PRINTER_HOST, () => {
       console.log(`Trimit copia ${sent + 1}/${copies}...`);
-      const ok = client.write(buffer);
+
+      // PJL header — dezactivează scalarea, forțează A4
+      const pjl = Buffer.from(
+        '\x1b%-12345X@PJL\r\n' +
+        '@PJL SET FITTOPAGE=OFF\r\n' +
+        '@PJL SET PAPERSIZECODE=A4\r\n' +
+        '@PJL ENTER LANGUAGE=PDF\r\n',
+        'binary'
+      );
+
+      const combined = Buffer.concat([pjl, buffer]);
+      const ok = client.write(combined);
       if (ok) {
         setTimeout(() => client.end(), 3000);
       } else {
@@ -194,7 +205,7 @@ app.post('/print', requireAuth, upload.single('file'), (req, res) => {
   const copies = parseInt(req.body.copies) || 1;
   console.log('Fisier primit:', req.file.size, 'bytes | Copii:', copies);
 
-  // Răspundem imediat — nu mai așteptăm imprimanta
+  // Răspundem imediat
   res.json({
     success: true,
     confirmed: true,
