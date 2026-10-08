@@ -166,7 +166,7 @@ app.get('/printer-status', requireAuth, (req, res) => {
 app.post('/print', requireAuth, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Niciun fisier primit' });
   const copies = parseInt(req.body.copies) || 1;
-  console.log('Fisier primit:', req.file.size, 'bytes | Copii:', copies);
+  console.log('Fisier primit:', req.file.size, 'bytes | Copii:', copies, '| Tip:', req.file.mimetype, '| Header:', req.file.buffer.slice(0, 8).toString('hex'));
 
   res.json({ success: true, confirmed: true, copies, message: `Job trimis la imprimantă — ${copies} ${copies === 1 ? 'copie' : 'copii'}` });
 
